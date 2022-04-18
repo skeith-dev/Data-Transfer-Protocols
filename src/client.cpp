@@ -6,6 +6,9 @@
 #include <vector>
 #include <string>
 #include <fstream>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
 #include "packet.h"
 
 
@@ -27,11 +30,9 @@ bool quit; //true for yes, false for no
 std::string filePath; //path to file to be sent
 int fileSize; //size of file in bytes
 
-//DECLARE UDP SOCKET GLOBALS HERE
-
 bool outstanding; //flag to indicate packets still in transit
 int iterator; //iterator for network protocols
-int situationalErrorsIterator;
+int situationalErrorsIterator; //iterator used to drop packets of a particular iteration
 std::vector<int> situationalErrorsIterations; //indices of packets to be dropped (ex. every 5th packet)
 bool *acksPtr; //ptr to bool array; true for ack received, false for ack not (yet) received
 
@@ -72,22 +73,31 @@ void generateRandomSituationalErrors();
 
 void generateUserSituationalErrors();
 
-void executeSAWProtocol();
-
-void executeGBNProtocol();
-
-void executeSRProtocol();
+void executeSAWProtocol(int clientSocket);
 
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
 //Function implementations (including main)      //*****//*****//*****//
 
 int main() {
 
+    //set up UDP socket
+    struct sockaddr_in serverAddress = {0};
+    int clientSocket = socket(AF_INET, SOCK_DGRAM, 0);
+    if(clientSocket == -1) {
+        perror("Failed to create client socket!");
+        exit(EXIT_FAILURE);
+    }
+    serverAddress.sin_family = AF_INET;
+
     do {
 
         //prompt user for each of the following fields
         ipAddress = ipAddressPrompt();
+        serverAddress.sin_addr.s_addr = inet_addr(ipAddress.c_str());
+
         portNum = portNumPrompt();
+        serverAddress.sin_port = htons(portNum);
+
         protocolType = protocolTypePrompt();
         packetSize = packetSizePrompt();
         timeoutInterval = timeoutIntervalPrompt();
@@ -112,18 +122,15 @@ int main() {
 
         filePath = filePathPrompt();
 
-        bool acks[rangeOfSequenceNumbers];
-        acksPtr = acks;
-
         switch (protocolType) {
             case 0:
-                executeSAWProtocol();
+                executeSAWProtocol(clientSocket);
                 break;
             case 1:
-                executeGBNProtocol();
+                //executeGBNProtocol();
                 break;
             case 2:
-                executeSRProtocol();
+                //executeSRProtocol();
                 break;
             default:
                 break;
@@ -290,6 +297,13 @@ void writeFileToPacket(int sequenceNumber) {
 
 }
 
+void sendPacket(int clientSocket) {
+
+    write(clientSocket, &myPacket, packetSize);
+    std::cout << "Sent Packet #" << iterator << ": [ " << myPacket.contents.data() << " ]" << std::endl;
+
+}
+
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
 //Situational errors
 
@@ -341,11 +355,11 @@ void generateUserSituationalErrors() {
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
 //Network protocols (algorithms)
 
-void executeSAWProtocol() {
-
-    signal(SIGALRM, sawSignalHandler);
+void executeSAWProtocol(int clientSocket) {
 
     auto startTime = std::chrono::system_clock::now();
+
+    signal(SIGALRM, sawSignalHandler);
 
     bool situationalErrorFlag;
     situationalErrorsIterator = 0;
@@ -353,6 +367,8 @@ void executeSAWProtocol() {
     while(iterator < rangeOfSequenceNumbers) {
 
         alarm(timeoutInterval);
+
+        Packet ack;
 
         situationalErrorFlag = false;
         for(int situationalErrorIteration : situationalErrorsIterations) {
@@ -362,21 +378,20 @@ void executeSAWProtocol() {
         }
 
         if(!situationalErrorFlag) {
-            //READ SECTION OF FILE TO myPacket
-
-            //SEND PACKET TO SERVER
+            writeFileToPacket(iterator);
+            sendPacket(clientSocket);
         }
 
         outstanding = true;
 
-        while(/*READ ACK RESPONSE FROM SERVER*/) {
-            if(/*ACK NUM*/ == iterator) {
+        while(read(clientSocket, &ack, sizeof(ack))) {
+            if(ack.sequenceNumber == iterator + 1 && ack.valid) {
                 outstanding = false;
-                iterator++;
                 break;
             }
         }
 
+        iterator++;
         situationalErrorsIterator++;
 
     }
@@ -387,76 +402,3 @@ void executeSAWProtocol() {
 
 }
 
-void executeGBNProtocol() {
-
-    signal(SIGALRM, gbnSignalHandler);
-
-    auto startTime = std::chrono::system_clock::now();
-
-    asio::streambuf streamBuffer;
-    std::string response;
-
-    int ackNum;
-    iterator = 0;
-    while(iterator < rangeOfSequenceNumbers) {
-
-        alarm(timeoutInterval);
-
-        //SEND WINDOW OF PACKETS TO SERVER (EXCLUDING PACKETS OF ERROR ITERATION)
-
-        while(/*READ ACK RESPONSE FROM SERVER*/) {
-            if(/*ACK NUM*/ >= iterator + slidingWindowSize || /*ACK NUM*/ >= rangeOfSequenceNumbers) {
-                outstanding = false;
-            }
-            if(/*ACK NUM*/ > iterator) {
-                iterator = /*ACK NUM*/;
-                printWindow();
-            }
-        }
-
-    }
-
-    auto endTime = std::chrono::system_clock::now();
-    std::chrono::duration<double> elapsedSeconds = endTime - startTime;
-    std::cout << std::endl << "Total execution time = " << elapsedSeconds.count() << std::endl;
-
-}
-
-void executeSRProtocol() {
-
-    signal(SIGALRM, srSignalHandler);
-
-    auto startTime = std::chrono::system_clock::now();
-
-    asio::streambuf streamBuffer;
-    std::string response;
-
-    int ackNum;
-    iterator = 0;
-    while(iterator < rangeOfSequenceNumbers) {
-
-        alarm(timeoutInterval);
-
-        //SEND WINDOW OF PACKETS TO SERVER (EXCLUDING PACKETS OF ERROR ITERATION)
-
-        while(/*READ ACK RESPONSE FROM SERVER*/) {
-            if(/*ACK NUM*/ >= iterator + slidingWindowSize || /*ACK NUM*/ >= rangeOfSequenceNumbers) {
-                outstanding = false;
-            }
-            if(/*ACK NUM*/ >= iterator) {
-                acksPtr[/*ACK NUM*/] = true;
-
-                while(acksPtr[iterator]) {
-                    iterator++;
-                    printWindow();
-                }
-            }
-        }
-
-    }
-
-    auto endTime = std::chrono::system_clock::now();
-    std::chrono::duration<double> elapsedSeconds = endTime - startTime;
-    std::cout << std::endl << "Total execution time = " << elapsedSeconds.count() << std::endl;
-
-}

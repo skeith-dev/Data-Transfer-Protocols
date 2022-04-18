@@ -11,6 +11,7 @@
 struct Packet {
     int sequenceNumber;
     std::vector<char> contents;
+    bool valid;
 };
 
 #endif //DATA_TRANSFER_PROTOCOLS_PACKET_H
