@@ -5,6 +5,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <iterator>
 #include <fstream>
 #include <netinet/in.h>
 #include <unistd.h>
@@ -287,10 +288,10 @@ void writeFileToPacket() {
 
     //set global packet struct sequence number
     myPacket.sequenceNumber = iterator;
-    //clear the current contents of the global packet struct char vector
-    /*myPacket.contents.clear();*/
     //copy the contents of the array to the global packet struct char vector
-    /*std::copy(&contents[0], &contents[packetSize], back_inserter(myPacket.contents));*/
+    for(int i = 0; i < packetSize; i++) {
+        myPacket.contents[i] = contents[i];
+    }
 
     fileInputStream.close();
 
@@ -300,7 +301,12 @@ void sendPacket(int clientSocket, sockaddr_in serverAddress) {
 
     myPacket.valid = true;
     sendto(clientSocket, &myPacket, sizeof(myPacket), 0, (const struct sockaddr *) &serverAddress, sizeof(serverAddress));
-    std::cout << "Sent Packet #" << iterator << ": [ " /*<< myPacket.contents.data()*/ << " ]" << std::endl;
+
+    std::cout << "Sent Packet #" << iterator << ": [ ";
+    for(int i = 0; i < packetSize; i++) {
+        std::cout << myPacket.contents[i] << " ";
+    }
+    std::cout << " ]" << std::endl;
 
 }
 

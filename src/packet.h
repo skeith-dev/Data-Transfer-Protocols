@@ -10,7 +10,7 @@
 
 struct Packet {
     int sequenceNumber;
-    //std::vector<char> contents;
+    char contents[MAX_INPUT];
     bool valid;
 };
 

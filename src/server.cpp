@@ -256,9 +256,9 @@ void executeSAWProtocol(int serverSocket, sockaddr_in clientAddress) {
 
             if(myPacket.sequenceNumber == iterator && myPacket.valid) {
                 std::cout << "Received packet #" << myPacket.sequenceNumber << " successfully! [ ";
-                /*for(char content : ack.contents) {
-                    std::cout << content;
-                }*/
+                for(int i = 0; i < packetSize; i++) {
+                    std::cout << myPacket.contents[i];
+                }
                 std::cout << " ]" << std::endl;
 
                 iterator++;
