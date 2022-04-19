@@ -231,6 +231,20 @@ void sendAck(int serverSocket, sockaddr_in clientAddress) {
 
 }
 
+void writePacketToFile(bool append, const std::string& message) {
+
+    std::ofstream fileOutputStream;
+    if(append) {
+        fileOutputStream.open(filePath, std::ios_base::app);
+    } else {
+        fileOutputStream.open(filePath);
+    }
+    fileOutputStream << message;
+
+    fileOutputStream.close();
+
+}
+
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
 //Network protocols (algorithms)
 
@@ -263,10 +277,12 @@ void executeSAWProtocol(int serverSocket, sockaddr_in clientAddress) {
 
                 iterator++;
                 sendAck(serverSocket, clientAddress);
+                writePacketToFile(true, myPacket.contents);
                 break;
             } else {
                 std::cout << "Received packet #" << myPacket.sequenceNumber << "... valid = " << myPacket.valid << std::endl;
                 sendAck(serverSocket, clientAddress);
+                writePacketToFile(true, myPacket.contents);
             }
 
         }

@@ -24,12 +24,13 @@ int protocolType; //0 for S&W, 1 for GBN, 2 for SR
 int packetSize; //specified size of packets to be sent
 int timeoutInterval; //user-specified (0+) or ping calculated (-1)
 int slidingWindowSize; //ex. [1, 2, 3, 4, 5, 6, 7, 8], size = 8
-int rangeOfSequenceNumbers; //ex. (sliding window size = 3) [1, 2, 3] -> [2, 3, 4] -> [3, 4, 5], range = 5
 int situationalErrors; //none (0), randomly generated (1), or user-specified (2)
+std::string filePath; //path to file to be sent
+int rangeOfSequenceNumbers; //ex. (sliding window size = 3) [1, 2, 3] -> [2, 3, 4] -> [3, 4, 5], range = 5
 bool quit; //true for yes, false for no
 
-std::string filePath; //path to file to be sent
 int fileSize; //size of file in bytes
+int fileSizeRangeOfSequenceNumbers; //the range of sequence numbers necessary to send the whole file
 
 bool outstanding; //flag to indicate packets still in transit
 int iterator; //iterator for network protocols
@@ -60,6 +61,8 @@ std::string filePathPrompt();
 bool quitPrompt();
 
 void printWindow();
+
+void openFile();
 
 void writeFileToPacket();
 
@@ -103,8 +106,6 @@ int main() {
             slidingWindowSize = slidingWindowSizePrompt();
         }
 
-        rangeOfSequenceNumbers = rangeOfSequenceNumbersPrompt();
-
         situationalErrors = situationalErrorsPrompt();
         switch (situationalErrors) {
             case 1:
@@ -118,6 +119,9 @@ int main() {
         }
 
         filePath = filePathPrompt();
+        openFile();
+
+        rangeOfSequenceNumbers = rangeOfSequenceNumbersPrompt();
 
         switch (protocolType) {
             case 0:
@@ -215,7 +219,7 @@ int slidingWindowSizePrompt() {
 
 int rangeOfSequenceNumbersPrompt() {
 
-    std::cout << "Range of sequence numbers:" << std::endl;
+    std::cout << "Range of sequence numbers (" << fileSizeRangeOfSequenceNumbers << " required to send entire file):" << std::endl;
 
     std::string responseString;
     std::getline(std::cin, responseString);
@@ -269,6 +273,25 @@ void printWindow() {
         }
     }
     std::cout << "]" << std::endl;
+
+}
+
+void openFile() {
+
+    std::ifstream fileInputStream;
+
+    fileInputStream.open(filePath, std::ios_base::in | std::ios_base::binary);
+    if (fileInputStream.fail()) {
+        throw std::fstream::failure("Failed while opening file " + filePath);
+    }
+
+    fileInputStream.seekg(0, fileInputStream.end);
+    fileSize = (int) fileInputStream.tellg();
+    fileSizeRangeOfSequenceNumbers = fileSize / packetSize + fileSize % packetSize;
+
+    std::cout << std::endl << "File to deliver: " << filePath << std::endl << "File size: " << fileSize << " bytes" << std::endl << std::endl;
+
+    fileInputStream.close();
 
 }
 
