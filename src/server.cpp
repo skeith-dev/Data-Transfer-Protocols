@@ -47,6 +47,8 @@ bool quitPrompt();
 
 void executeSAWProtocol(int serverSocket, sockaddr_in clientAddress);
 
+void executeGBNProtocol(int serverSocket, sockaddr_in clientAddress);
+
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
 //Functions (including main)       //*****//*****//*****//*****//*****//
 
@@ -76,7 +78,7 @@ int main() {
         protocolType = protocolTypePrompt();
         packetSize = packetSizePrompt();
 
-        if(protocolType != 0) {
+        if(protocolType == 2) {
             slidingWindowSize = slidingWindowSizePrompt();
         }
 
@@ -97,7 +99,7 @@ int main() {
                 break;
             case 1:
                 std::cout << std::endl << "Executing Go Back N protocol..." << std::endl << std::endl;
-                //executeGBNProtocol();
+                executeGBNProtocol(serverSocket, clientAddress);
                 break;
             case 2:
                 std::cout << std::endl << "Executing Selective Repeat protocol..." << std::endl << std::endl;
@@ -286,6 +288,49 @@ void executeSAWProtocol(int serverSocket, sockaddr_in clientAddress) {
             }
 
         }
+    }
+
+}
+
+void executeGBNProtocol(int serverSocket, sockaddr_in clientAddress) {
+
+    int clientSize = sizeof(clientAddress);
+
+    iterator = 0;
+    while(iterator < rangeOfSequenceNumbers) {
+
+        Packet myPacket{};
+
+        while(true) {
+
+            long ret = recvfrom(serverSocket, &myPacket, sizeof(myPacket), 0, (struct sockaddr*)&clientAddress, reinterpret_cast<socklen_t *>(&clientSize));
+
+            if(ret == 0) {
+                break;
+            } else if(ret < 0) {
+                perror("Error when receiving packet");
+                exit(-1);
+            }
+
+            if(myPacket.sequenceNumber == iterator && myPacket.valid) {
+                std::cout << "Received packet #" << myPacket.sequenceNumber << " successfully! [ ";
+                for(int i = 0; i < packetSize; i++) {
+                    std::cout << myPacket.contents[i];
+                }
+                std::cout << " ]" << std::endl;
+
+                iterator++;
+                sendAck(serverSocket, clientAddress);
+                writePacketToFile(true, myPacket.contents);
+                break;
+            } else {
+                std::cout << "Received packet #" << myPacket.sequenceNumber << "... valid = " << myPacket.valid << std::endl;
+                sendAck(serverSocket, clientAddress);
+                writePacketToFile(true, myPacket.contents);
+            }
+
+        }
+
     }
 
 }

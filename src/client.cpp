@@ -64,15 +64,23 @@ void printWindow();
 
 void openFile();
 
-void writeFileToPacket();
+void writeFileToPacket(int sequenceNumber);
+
+void sendPacket(int clientSocket, sockaddr_in serverAddress, int sequenceNumber);
+
+void sendWindow(int clientSocket, sockaddr_in serverAddress);
 
 void sawSignalHandler(__attribute__((unused)) int signal);
+
+void gbnSignalHandler(__attribute__((unused)) int signal);
 
 void generateRandomSituationalErrors();
 
 void generateUserSituationalErrors();
 
 void executeSAWProtocol(int clientSocket, sockaddr_in serverAddress);
+
+void executeGBNProtocol(int clientSocket, sockaddr_in serverAddress);
 
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
 //Function implementations (including main)      //*****//*****//*****//
@@ -130,7 +138,7 @@ int main() {
                 break;
             case 1:
                 std::cout << std::endl << "Executing Go Back N protocol..." << std::endl << std::endl;
-                //executeGBNProtocol();
+                executeGBNProtocol(clientSocket, serverAddress);
                 break;
             case 2:
                 std::cout << std::endl << "Executing Selective Repeat protocol..." << std::endl << std::endl;
@@ -295,14 +303,14 @@ void openFile() {
 
 }
 
-void writeFileToPacket() {
+void writeFileToPacket(int sequenceNumber) {
 
     //create ifstream object
     std::ifstream fileInputStream;
     //open file at filepath in read and binary modes
     fileInputStream.open(filePath, std::ios_base::in | std::ios_base::binary);
     //navigate to section of file beginning at (sequenceNumber * packetSize) offset from beginning
-    fileInputStream.seekg(iterator * packetSize, std::ios_base::beg);
+    fileInputStream.seekg(sequenceNumber * packetSize, std::ios_base::beg);
 
     //create char array for file contents
     char contents[packetSize];
@@ -310,7 +318,7 @@ void writeFileToPacket() {
     fileInputStream.read(contents, packetSize);
 
     //set global packet struct sequence number
-    myPacket.sequenceNumber = iterator;
+    myPacket.sequenceNumber = sequenceNumber;
     //copy the contents of the array to the global packet struct char vector
     for(int i = 0; i < packetSize; i++) {
         myPacket.contents[i] = contents[i];
@@ -320,16 +328,29 @@ void writeFileToPacket() {
 
 }
 
-void sendPacket(int clientSocket, sockaddr_in serverAddress) {
+void sendPacket(int clientSocket, sockaddr_in serverAddress, int sequenceNumber) {
+
+    writeFileToPacket(sequenceNumber);
 
     myPacket.valid = true;
     sendto(clientSocket, &myPacket, sizeof(myPacket), 0, (const struct sockaddr *) &serverAddress, sizeof(serverAddress));
 
-    std::cout << "Sent Packet #" << iterator << ": [ ";
+    std::cout << "Sent Packet #" << sequenceNumber << ": [ ";
     for(int i = 0; i < packetSize; i++) {
-        std::cout << myPacket.contents[i] << " ";
+        std::cout << myPacket.contents[i];
     }
     std::cout << " ]" << std::endl;
+
+}
+
+void sendWindow(int clientSocket, sockaddr_in serverAddress) {
+
+    for(int i = 0; i < slidingWindowSize; i++) {
+        if(iterator + i < rangeOfSequenceNumbers) {
+            sendPacket(clientSocket, serverAddress, iterator + i);
+            outstanding = true;
+        }
+    }
 
 }
 
@@ -422,8 +443,7 @@ void executeSAWProtocol(int clientSocket, sockaddr_in serverAddress) {
         }
 
         if(!situationalErrorFlag) {
-            writeFileToPacket();
-            sendPacket(clientSocket, serverAddress);
+            sendPacket(clientSocket, serverAddress, iterator);
         }
 
         outstanding = true;
@@ -447,3 +467,43 @@ void executeSAWProtocol(int clientSocket, sockaddr_in serverAddress) {
 
 }
 
+void executeGBNProtocol(int clientSocket, sockaddr_in serverAddress) {
+
+    auto startTime = std::chrono::system_clock::now();
+
+    //signal(SIGALRM, sawSignalHandler);
+
+    int serverSize = sizeof(serverAddress);
+
+    bool situationalErrorFlag;
+    situationalErrorsIterator = 0;
+    iterator = 0;
+    while(iterator < rangeOfSequenceNumbers) {
+
+        //alarm(timeoutInterval);
+
+        Packet myAck{};
+
+        sendWindow(clientSocket, serverAddress);
+
+        while( recvfrom(clientSocket, &myAck, sizeof(myAck), 0, (struct sockaddr*)&serverAddress, reinterpret_cast<socklen_t *>(&serverSize)) ) {
+
+            std::cout << "Received ack #" << myAck.sequenceNumber << std::endl;
+
+            if( (myAck.sequenceNumber >= iterator + slidingWindowSize || myAck.sequenceNumber >= rangeOfSequenceNumbers) && myAck.valid ) {
+                outstanding = false;
+            }
+            if(myAck.sequenceNumber > iterator && myAck.valid) {
+                iterator = myAck.sequenceNumber;
+                printWindow();
+            }
+
+        }
+
+    }
+
+    auto endTime = std::chrono::system_clock::now();
+    std::chrono::duration<double> elapsedSeconds = endTime - startTime;
+    std::cout << std::endl << "Total execution time = " << elapsedSeconds.count() << std::endl;
+
+}
