@@ -7,7 +7,6 @@
 #include <string>
 #include <fstream>
 #include <netinet/in.h>
-#include <arpa/inet.h>
 #include <unistd.h>
 #include "packet.h"
 
@@ -61,13 +60,9 @@ bool quitPrompt();
 
 void printWindow();
 
-void writeFileToPacket();
+void writeFileToPacket(int sequenceNumber);
 
 void sawSignalHandler(int signal);
-
-void gbnSignalHandler(int signal);
-
-void srSignalHandler(int signal);
 
 void generateRandomSituationalErrors();
 
@@ -93,7 +88,7 @@ int main() {
 
         //prompt user for each of the following fields
         ipAddress = ipAddressPrompt();
-        serverAddress.sin_addr.s_addr = inet_addr(ipAddress.c_str());
+        serverAddress.sin_addr.s_addr = INADDR_ANY; //inet_addr(ipAddress.c_str());
 
         portNum = portNumPrompt();
         serverAddress.sin_port = htons(portNum);
@@ -124,12 +119,15 @@ int main() {
 
         switch (protocolType) {
             case 0:
+                std::cout << std::endl << "Executing Stop & Wait protocol..." << std::endl << std::endl;
                 executeSAWProtocol(clientSocket);
                 break;
             case 1:
+                std::cout << std::endl << "Executing Go Back N protocol..." << std::endl << std::endl;
                 //executeGBNProtocol();
                 break;
             case 2:
+                std::cout << std::endl << "Executing Selective Repeat protocol..." << std::endl << std::endl;
                 //executeSRProtocol();
                 break;
             default:
@@ -301,6 +299,19 @@ void sendPacket(int clientSocket) {
 
     write(clientSocket, &myPacket, packetSize);
     std::cout << "Sent Packet #" << iterator << ": [ " << myPacket.contents.data() << " ]" << std::endl;
+
+}
+
+//*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
+//Signal handling
+
+void sawSignalHandler(int signal) {
+
+    if (outstanding && iterator < rangeOfSequenceNumbers) {
+        std::cout << "Timed-out! Resending packet..." << std::endl;
+        //sendPacket(iterator);
+        alarm(timeoutInterval);
+    }
 
 }
 

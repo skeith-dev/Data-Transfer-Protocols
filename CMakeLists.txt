@@ -10,4 +10,5 @@ add_executable(Data_Transfer_Protocols_client
         src/packet.h)
 
 add_executable(Data_Transfer_Protocols_server
-        src/server.cpp)
+        src/server.cpp
+        src/packet.h)
