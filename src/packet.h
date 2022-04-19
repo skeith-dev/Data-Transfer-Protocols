@@ -10,7 +10,7 @@
 
 struct Packet {
     int sequenceNumber;
-    std::vector<char> contents;
+    //std::vector<char> contents;
     bool valid;
 };
 

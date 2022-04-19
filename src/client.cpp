@@ -8,6 +8,7 @@
 #include <fstream>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <arpa/inet.h>
 #include "packet.h"
 
 
@@ -33,7 +34,6 @@ bool outstanding; //flag to indicate packets still in transit
 int iterator; //iterator for network protocols
 int situationalErrorsIterator; //iterator used to drop packets of a particular iteration
 std::vector<int> situationalErrorsIterations; //indices of packets to be dropped (ex. every 5th packet)
-bool *acksPtr; //ptr to bool array; true for ack received, false for ack not (yet) received
 
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
 //Function declarations            //*****//*****//*****//*****//*****//
@@ -60,15 +60,15 @@ bool quitPrompt();
 
 void printWindow();
 
-void writeFileToPacket(int sequenceNumber);
+void writeFileToPacket();
 
-void sawSignalHandler(int signal);
+void sawSignalHandler(__attribute__((unused)) int signal);
 
 void generateRandomSituationalErrors();
 
 void generateUserSituationalErrors();
 
-void executeSAWProtocol(int clientSocket);
+void executeSAWProtocol(int clientSocket, sockaddr_in serverAddress);
 
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
 //Function implementations (including main)      //*****//*****//*****//
@@ -79,16 +79,17 @@ int main() {
     struct sockaddr_in serverAddress = {0};
     int clientSocket = socket(AF_INET, SOCK_DGRAM, 0);
     if(clientSocket == -1) {
-        perror("Failed to create client socket!");
+        perror("Failed to create client socket");
         exit(EXIT_FAILURE);
     }
-    serverAddress.sin_family = AF_INET;
 
     do {
 
+        serverAddress.sin_family = AF_INET;
+
         //prompt user for each of the following fields
         ipAddress = ipAddressPrompt();
-        serverAddress.sin_addr.s_addr = INADDR_ANY; //inet_addr(ipAddress.c_str());
+        serverAddress.sin_addr.s_addr = inet_addr(ipAddress.c_str());
 
         portNum = portNumPrompt();
         serverAddress.sin_port = htons(portNum);
@@ -120,7 +121,7 @@ int main() {
         switch (protocolType) {
             case 0:
                 std::cout << std::endl << "Executing Stop & Wait protocol..." << std::endl << std::endl;
-                executeSAWProtocol(clientSocket);
+                executeSAWProtocol(clientSocket, serverAddress);
                 break;
             case 1:
                 std::cout << std::endl << "Executing Go Back N protocol..." << std::endl << std::endl;
@@ -270,14 +271,14 @@ void printWindow() {
 
 }
 
-void writeFileToPacket(int sequenceNumber) {
+void writeFileToPacket() {
 
     //create ifstream object
     std::ifstream fileInputStream;
     //open file at filepath in read and binary modes
     fileInputStream.open(filePath, std::ios_base::in | std::ios_base::binary);
     //navigate to section of file beginning at (sequenceNumber * packetSize) offset from beginning
-    fileInputStream.seekg(sequenceNumber * packetSize, std::ios_base::beg);
+    fileInputStream.seekg(iterator * packetSize, std::ios_base::beg);
 
     //create char array for file contents
     char contents[packetSize];
@@ -285,27 +286,28 @@ void writeFileToPacket(int sequenceNumber) {
     fileInputStream.read(contents, packetSize);
 
     //set global packet struct sequence number
-    myPacket.sequenceNumber = sequenceNumber;
+    myPacket.sequenceNumber = iterator;
     //clear the current contents of the global packet struct char vector
-    myPacket.contents.clear();
+    /*myPacket.contents.clear();*/
     //copy the contents of the array to the global packet struct char vector
-    std::copy(&contents[0], &contents[packetSize], back_inserter(myPacket.contents));
+    /*std::copy(&contents[0], &contents[packetSize], back_inserter(myPacket.contents));*/
 
     fileInputStream.close();
 
 }
 
-void sendPacket(int clientSocket) {
+void sendPacket(int clientSocket, sockaddr_in serverAddress) {
 
-    write(clientSocket, &myPacket, packetSize);
-    std::cout << "Sent Packet #" << iterator << ": [ " << myPacket.contents.data() << " ]" << std::endl;
+    myPacket.valid = true;
+    sendto(clientSocket, &myPacket, sizeof(myPacket), 0, (const struct sockaddr *) &serverAddress, sizeof(serverAddress));
+    std::cout << "Sent Packet #" << iterator << ": [ " /*<< myPacket.contents.data()*/ << " ]" << std::endl;
 
 }
 
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
 //Signal handling
 
-void sawSignalHandler(int signal) {
+void sawSignalHandler(__attribute__((unused)) int signal) {
 
     if (outstanding && iterator < rangeOfSequenceNumbers) {
         std::cout << "Timed-out! Resending packet..." << std::endl;
@@ -366,20 +368,22 @@ void generateUserSituationalErrors() {
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
 //Network protocols (algorithms)
 
-void executeSAWProtocol(int clientSocket) {
+void executeSAWProtocol(int clientSocket, sockaddr_in serverAddress) {
 
     auto startTime = std::chrono::system_clock::now();
 
-    signal(SIGALRM, sawSignalHandler);
+    //signal(SIGALRM, sawSignalHandler);
+
+    int serverSize = sizeof(serverAddress);
 
     bool situationalErrorFlag;
     situationalErrorsIterator = 0;
     iterator = 0;
     while(iterator < rangeOfSequenceNumbers) {
 
-        alarm(timeoutInterval);
+        //alarm(timeoutInterval);
 
-        Packet ack;
+        Packet myAck{};
 
         situationalErrorFlag = false;
         for(int situationalErrorIteration : situationalErrorsIterations) {
@@ -389,14 +393,15 @@ void executeSAWProtocol(int clientSocket) {
         }
 
         if(!situationalErrorFlag) {
-            writeFileToPacket(iterator);
-            sendPacket(clientSocket);
+            writeFileToPacket();
+            sendPacket(clientSocket, serverAddress);
         }
 
         outstanding = true;
 
-        while(read(clientSocket, &ack, sizeof(ack))) {
-            if(ack.sequenceNumber == iterator + 1 && ack.valid) {
+        while( recvfrom(clientSocket, &myAck, sizeof(myAck), 0, (struct sockaddr*)&serverAddress, reinterpret_cast<socklen_t *>(&serverSize)) ) {
+            if(myAck.sequenceNumber == iterator + 1 && myAck.valid) {
+                std::cout << "Received ack #" << myAck.sequenceNumber << std::endl;
                 outstanding = false;
                 break;
             }

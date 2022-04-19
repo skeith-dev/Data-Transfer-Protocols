@@ -7,13 +7,12 @@
 #include <fstream>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <arpa/inet.h>
 #include "packet.h"
 
 
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
 //Fields      //*****//*****//*****//*****//*****//*****//*****//*****//
-
-Packet myPacket;
 
 std::string ipAddress; //IP address of the target server
 int portNum; //port number of the target server
@@ -25,9 +24,7 @@ int rangeOfSequenceNumbers; //ex. (sliding window size = 3) [1, 2, 3] -> [2, 3, 
 std::string filePath;
 bool quit; //true for yes, false for no
 
-int sequenceNumber;
 int iterator; //iterator for network protocols
-bool *receivedPtr; //ptr to bool array; true for packet received, false for packet not (yet) received
 
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
 //Function declarations            //*****//*****//*****//*****//*****//
@@ -48,7 +45,7 @@ std::string filePathPrompt();
 
 bool quitPrompt();
 
-void executeSAWProtocol(int serverSocket);
+void executeSAWProtocol(int serverSocket, sockaddr_in clientAddress);
 
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
 //Functions (including main)       //*****//*****//*****//*****//*****//
@@ -56,12 +53,12 @@ void executeSAWProtocol(int serverSocket);
 int main() {
 
     //set up UDP socket
-    struct sockaddr_in serverAddress, clientAddress;
+    struct sockaddr_in serverAddress{}, clientAddress{};
     memset(&serverAddress, 0, sizeof(serverAddress));
     memset(&clientAddress, 0, sizeof(clientAddress));
     int serverSocket = socket(AF_INET, SOCK_DGRAM, 0);
     if(serverSocket == -1) {
-        perror("Failed to create server socket!");
+        perror("Failed to create server socket:");
         exit(EXIT_FAILURE);
     }
 
@@ -71,7 +68,7 @@ int main() {
 
         //prompt user for each of the following fields
         ipAddress = ipAddressPrompt();
-        serverAddress.sin_addr.s_addr = INADDR_ANY; //inet_addr(ipAddress.c_str());
+        serverAddress.sin_addr.s_addr = inet_addr(ipAddress.c_str());
 
         portNum = portNumPrompt();
         serverAddress.sin_port = htons(portNum);
@@ -88,22 +85,22 @@ int main() {
 
         int socketBinding = bind(serverSocket, (const struct sockaddr *)&serverAddress, sizeof(serverAddress));
         if(socketBinding == -1) {
-            perror("Failed to bind server socket!");
+            perror("Failed to bind server socket");
             close(serverSocket);
             exit(EXIT_FAILURE);
         }
 
         switch (protocolType) {
             case 0:
-                std::cout << "Executing Stop & Wait protocol..." << std::endl;
-                executeSAWProtocol(serverSocket);
+                std::cout << std::endl << "Executing Stop & Wait protocol..." << std::endl << std::endl;
+                executeSAWProtocol(serverSocket, clientAddress);
                 break;
             case 1:
-                std::cout << "Executing Go Back N protocol..." << std::endl;
+                std::cout << std::endl << "Executing Go Back N protocol..." << std::endl << std::endl;
                 //executeGBNProtocol();
                 break;
             case 2:
-                std::cout << "Executing Selective Repeat protocol..." << std::endl;
+                std::cout << std::endl << "Executing Selective Repeat protocol..." << std::endl << std::endl;
                 //executeSRProtocol();
                 break;
             default:
@@ -223,46 +220,53 @@ void printWindow() {
 
 }
 
-void sendAck(int serverSocket) {
+void sendAck(int serverSocket, sockaddr_in clientAddress) {
 
-    write(serverSocket, &myPacket, packetSize);
-    std::cout << "Sent Ack #" << iterator << std::endl;
+    Packet myAck{};
+    myAck.sequenceNumber = iterator;
+    myAck.valid = true;
+
+    sendto(serverSocket, &myAck, sizeof(myAck), 0, (const struct sockaddr *) &clientAddress, sizeof(clientAddress));
+    std::cout << "Sent Ack #" << myAck.sequenceNumber << std::endl;
 
 }
 
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
 //Network protocols (algorithms)
 
-void executeSAWProtocol(int serverSocket) {
+void executeSAWProtocol(int serverSocket, sockaddr_in clientAddress) {
+
+    int clientSize = sizeof(clientAddress);
 
     iterator = 0;
-    for(;;) {
+    while(iterator < rangeOfSequenceNumbers) {
 
-        Packet ack;
+        Packet myPacket{};
 
         while(true) {
 
-            long ret = read(serverSocket, &ack, sizeof(ack));
+            long ret = recvfrom(serverSocket, &myPacket, sizeof(myPacket), 0, (struct sockaddr*)&clientAddress, reinterpret_cast<socklen_t *>(&clientSize));
 
             if(ret == 0) {
                 break;
             } else if(ret < 0) {
-                perror("Error when receiving packet!");
+                perror("Error when receiving packet");
                 exit(-1);
             }
 
-            if(ack.sequenceNumber == iterator && ack.valid) {
-                std::cout << "Received packet #" << ack.sequenceNumber << " successfully! [ " << ack.contents.data() << " ]" << std::endl;
-                myPacket.sequenceNumber = ack.sequenceNumber;
-                myPacket.valid = true;
+            if(myPacket.sequenceNumber == iterator && myPacket.valid) {
+                std::cout << "Received packet #" << myPacket.sequenceNumber << " successfully! [ ";
+                /*for(char content : ack.contents) {
+                    std::cout << content;
+                }*/
+                std::cout << " ]" << std::endl;
 
                 iterator++;
-
-                sendAck(serverSocket);
+                sendAck(serverSocket, clientAddress);
                 break;
             } else {
-                std::cout << "Received packet #" << ack.sequenceNumber << "... valid = " << ack.valid << std::endl;
-                sendAck(serverSocket);
+                std::cout << "Received packet #" << myPacket.sequenceNumber << "... valid = " << myPacket.valid << std::endl;
+                sendAck(serverSocket, clientAddress);
             }
 
         }
