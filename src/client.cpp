@@ -32,7 +32,6 @@ bool quit; //true for yes, false for no
 int fileSize; //size of file in bytes
 int fileSizeRangeOfSequenceNumbers; //the range of sequence numbers necessary to send the whole file
 
-bool outstanding; //flag to indicate packets still in transit
 int iterator; //iterator for network protocols
 int situationalErrorsIterator; //iterator used to drop packets of a particular iteration
 std::vector<int> situationalErrorsIterations; //indices of packets to be dropped (ex. every 5th packet)
@@ -69,10 +68,6 @@ void writeFileToPacket(int sequenceNumber);
 void sendPacket(int clientSocket, sockaddr_in serverAddress, int sequenceNumber);
 
 void sendWindow(int clientSocket, sockaddr_in serverAddress);
-
-void sawSignalHandler(__attribute__((unused)) int signal);
-
-void gbnSignalHandler(__attribute__((unused)) int signal);
 
 void generateRandomSituationalErrors();
 
@@ -343,30 +338,6 @@ void sendPacket(int clientSocket, sockaddr_in serverAddress, int sequenceNumber)
 
 }
 
-void sendWindow(int clientSocket, sockaddr_in serverAddress) {
-
-    for(int i = 0; i < slidingWindowSize; i++) {
-        if(iterator + i < rangeOfSequenceNumbers) {
-            sendPacket(clientSocket, serverAddress, iterator + i);
-            outstanding = true;
-        }
-    }
-
-}
-
-//*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
-//Signal handling
-
-void sawSignalHandler(__attribute__((unused)) int signal) {
-
-    if (outstanding && iterator < rangeOfSequenceNumbers) {
-        std::cout << "Timed-out! Resending packet..." << std::endl;
-        //sendPacket(iterator);
-        alarm(timeoutInterval);
-    }
-
-}
-
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
 //Situational errors
 
@@ -446,12 +417,12 @@ void executeSAWProtocol(int clientSocket, sockaddr_in serverAddress) {
             sendPacket(clientSocket, serverAddress, iterator);
         }
 
-        outstanding = true;
+        //outstanding = true;
 
         while( recvfrom(clientSocket, &myAck, sizeof(myAck), 0, (struct sockaddr*)&serverAddress, reinterpret_cast<socklen_t *>(&serverSize)) ) {
             if(myAck.sequenceNumber == iterator + 1 && myAck.valid) {
                 std::cout << "Received ack #" << myAck.sequenceNumber << std::endl;
-                outstanding = false;
+                //outstanding = false;
                 break;
             }
         }
@@ -469,48 +440,54 @@ void executeSAWProtocol(int clientSocket, sockaddr_in serverAddress) {
 
 void executeGBNProtocol(int clientSocket, sockaddr_in serverAddress) {
 
-    auto startTime = std::chrono::system_clock::now();
-
-    //signal(SIGALRM, sawSignalHandler);
+    std::chrono::system_clock::time_point startTime;
+    std::chrono::system_clock::time_point endTime;
 
     int serverSize = sizeof(serverAddress);
 
-    bool situationalErrorFlag;
-    situationalErrorsIterator = 0;
     iterator = 0;
-    while(iterator < rangeOfSequenceNumbers) {
+    int next = 0;
+    while(true) {
 
-        //alarm(timeoutInterval);
+        if(iterator >= rangeOfSequenceNumbers - 1) {
+            break;
+        }
 
         Packet myAck{};
 
-        sendWindow(clientSocket, serverAddress);
+        if(next < iterator + slidingWindowSize && next < rangeOfSequenceNumbers) {
+            sendPacket(clientSocket, serverAddress, next);
+            next++;
+        }
 
-        int cap = iterator + slidingWindowSize;
-        while( recvfrom(clientSocket, &myAck, sizeof(myAck), 0, (struct sockaddr*)&serverAddress, reinterpret_cast<socklen_t *>(&serverSize)) ) {
+        if(recvfrom(clientSocket, &myAck, sizeof(myAck), MSG_DONTWAIT, (struct sockaddr*)&serverAddress, reinterpret_cast<socklen_t *>(&serverSize)) != -1) {
 
             std::cout << "Received ack #" << myAck.sequenceNumber << std::endl;
 
-            if( (myAck.sequenceNumber >= iterator + slidingWindowSize || myAck.sequenceNumber >= rangeOfSequenceNumbers) && myAck.valid ) {
-                std::cout << "Condition 1 met..." << std::endl;
-                outstanding = false;
-            }
-            if(myAck.sequenceNumber > iterator && myAck.valid) {
-                std::cout << "Condition 2 met..." << std::endl;
-                iterator = myAck.sequenceNumber;
-                printWindow();
+            iterator = myAck.sequenceNumber + 1;
+            printWindow();
+
+            if(iterator == next) {
+                endTime = std::chrono::system_clock::now();
+            } else {
+                startTime = std::chrono::system_clock::now();
             }
 
-            if(myAck.sequenceNumber == cap || !outstanding) {
-                break;
+        }
+
+        std::chrono::duration<double> elapsedSeconds = endTime - startTime;
+        if(elapsedSeconds.count() >= timeoutInterval) {
+
+            std::cout << "Timed out!" << std::endl;
+
+            startTime = std::chrono::system_clock::now();
+
+            for(int i = iterator; i < next; i++) {
+                sendPacket(clientSocket, serverAddress, i);
             }
 
         }
 
     }
-
-    auto endTime = std::chrono::system_clock::now();
-    std::chrono::duration<double> elapsedSeconds = endTime - startTime;
-    std::cout << std::endl << "Total execution time = " << elapsedSeconds.count() << std::endl;
 
 }

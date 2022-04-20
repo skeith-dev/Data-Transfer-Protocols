@@ -222,10 +222,10 @@ void printWindow() {
 
 }
 
-void sendAck(int serverSocket, sockaddr_in clientAddress) {
+void sendAck(int serverSocket, sockaddr_in clientAddress, int sequenceNumber) {
 
     Packet myAck{};
-    myAck.sequenceNumber = iterator;
+    myAck.sequenceNumber = sequenceNumber;
     myAck.valid = true;
 
     sendto(serverSocket, &myAck, sizeof(myAck), 0, (const struct sockaddr *) &clientAddress, sizeof(clientAddress));
@@ -278,12 +278,12 @@ void executeSAWProtocol(int serverSocket, sockaddr_in clientAddress) {
                 std::cout << " ]" << std::endl;
 
                 iterator++;
-                sendAck(serverSocket, clientAddress);
+                //sendAck(serverSocket, clientAddress);
                 writePacketToFile(true, myPacket.contents);
                 break;
             } else {
                 std::cout << "Received packet #" << myPacket.sequenceNumber << "... valid = " << myPacket.valid << std::endl;
-                sendAck(serverSocket, clientAddress);
+                //sendAck(serverSocket, clientAddress);
                 writePacketToFile(true, myPacket.contents);
             }
 
@@ -297,36 +297,25 @@ void executeGBNProtocol(int serverSocket, sockaddr_in clientAddress) {
     int clientSize = sizeof(clientAddress);
 
     iterator = 0;
-    while(iterator < rangeOfSequenceNumbers) {
+    while(iterator < rangeOfSequenceNumbers - 1) {
 
         Packet myPacket{};
 
-        while(true) {
+        if(recvfrom(serverSocket, &myPacket, sizeof(myPacket), MSG_DONTWAIT, (struct sockaddr*)&clientAddress, reinterpret_cast<socklen_t *>(&clientSize)) != -1) {
 
-            long ret = recvfrom(serverSocket, &myPacket, sizeof(myPacket), 0, (struct sockaddr*)&clientAddress, reinterpret_cast<socklen_t *>(&clientSize));
-
-            if(ret == 0) {
-                break;
-            } else if(ret < 0) {
-                perror("Error when receiving packet");
-                exit(-1);
+            std::cout << "Received packet #" << myPacket.sequenceNumber << " successfully! [ ";
+            for(int i = 0; i < packetSize; i++) {
+                std::cout << myPacket.contents[i];
             }
+            std::cout << " ]" << std::endl;
 
-            if(myPacket.sequenceNumber == iterator && myPacket.valid) {
-                std::cout << "Received packet #" << myPacket.sequenceNumber << " successfully! [ ";
-                for(int i = 0; i < packetSize; i++) {
-                    std::cout << myPacket.contents[i];
-                }
-                std::cout << " ]" << std::endl;
-
+            if(myPacket.valid && myPacket.sequenceNumber == iterator) {
+                sendAck(serverSocket, clientAddress, iterator);
+                writePacketToFile(true, myPacket.contents);
                 iterator++;
-                sendAck(serverSocket, clientAddress);
-                writePacketToFile(true, myPacket.contents);
-                break;
             } else {
-                std::cout << "Received packet #" << myPacket.sequenceNumber << "... valid = " << myPacket.valid << std::endl;
-                sendAck(serverSocket, clientAddress);
-                writePacketToFile(true, myPacket.contents);
+                std::cout << "Received packet is corrupted!" << std::endl;
+                sendAck(serverSocket, clientAddress, iterator - 1);
             }
 
         }
