@@ -486,16 +486,23 @@ void executeGBNProtocol(int clientSocket, sockaddr_in serverAddress) {
 
         sendWindow(clientSocket, serverAddress);
 
+        int cap = iterator + slidingWindowSize;
         while( recvfrom(clientSocket, &myAck, sizeof(myAck), 0, (struct sockaddr*)&serverAddress, reinterpret_cast<socklen_t *>(&serverSize)) ) {
 
             std::cout << "Received ack #" << myAck.sequenceNumber << std::endl;
 
             if( (myAck.sequenceNumber >= iterator + slidingWindowSize || myAck.sequenceNumber >= rangeOfSequenceNumbers) && myAck.valid ) {
+                std::cout << "Condition 1 met..." << std::endl;
                 outstanding = false;
             }
             if(myAck.sequenceNumber > iterator && myAck.valid) {
+                std::cout << "Condition 2 met..." << std::endl;
                 iterator = myAck.sequenceNumber;
                 printWindow();
+            }
+
+            if(myAck.sequenceNumber == cap || !outstanding) {
+                break;
             }
 
         }
