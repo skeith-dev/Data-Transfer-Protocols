@@ -67,8 +67,6 @@ void writeFileToPacket(int sequenceNumber);
 
 void sendPacket(int clientSocket, sockaddr_in serverAddress, int sequenceNumber);
 
-void sendWindow(int clientSocket, sockaddr_in serverAddress);
-
 void generateRandomSituationalErrors();
 
 void generateUserSituationalErrors();
@@ -391,48 +389,49 @@ void generateUserSituationalErrors() {
 
 void executeSAWProtocol(int clientSocket, sockaddr_in serverAddress) {
 
-    auto startTime = std::chrono::system_clock::now();
+    std::chrono::system_clock::time_point startTime;
+    std::chrono::system_clock::time_point endTime;
 
-    //signal(SIGALRM, sawSignalHandler);
+    std::chrono::system_clock::time_point intervalStartTime;
+    std::chrono::system_clock::time_point intervalEndTime;
 
     int serverSize = sizeof(serverAddress);
 
-    bool situationalErrorFlag;
-    situationalErrorsIterator = 0;
-    iterator = 0;
-    while(iterator < rangeOfSequenceNumbers) {
+    startTime = std::chrono::system_clock::now();
 
-        //alarm(timeoutInterval);
+    bool outstanding = false;
+    iterator = 0;
+    while(true) {
+
+        if(iterator >= rangeOfSequenceNumbers - 1) {
+            break;
+        }
 
         Packet myAck{};
 
-        situationalErrorFlag = false;
-        for(int situationalErrorIteration : situationalErrorsIterations) {
-            if(situationalErrorsIterator % situationalErrorIteration == 0) {
-                situationalErrorFlag = true;
-            }
+        if(!outstanding) {
+            sendPacket(clientSocket, serverAddress, iterator);
+            outstanding = true;
+            intervalStartTime = std::chrono::system_clock::now();
         }
 
-        if(!situationalErrorFlag) {
+        if(recvfrom(clientSocket, &myAck, sizeof(myAck), MSG_DONTWAIT, (struct sockaddr*)&serverAddress, reinterpret_cast<socklen_t *>(&serverSize)) != -1) {
+            std::cout << "Received ack #" << myAck.sequenceNumber << std::endl;
+            iterator = myAck.sequenceNumber + 1;
+            outstanding = false;
+            intervalEndTime = std::chrono::system_clock::now();
+        }
+
+        std::chrono::duration<double> intervalElapsedSeconds = intervalEndTime - intervalStartTime;
+        if(intervalElapsedSeconds.count() >= timeoutInterval) {
+            std::cout << "Timed out!" << std::endl;
+            intervalStartTime = std::chrono::system_clock::now();
             sendPacket(clientSocket, serverAddress, iterator);
         }
 
-        //outstanding = true;
-
-        while( recvfrom(clientSocket, &myAck, sizeof(myAck), 0, (struct sockaddr*)&serverAddress, reinterpret_cast<socklen_t *>(&serverSize)) ) {
-            if(myAck.sequenceNumber == iterator + 1 && myAck.valid) {
-                std::cout << "Received ack #" << myAck.sequenceNumber << std::endl;
-                //outstanding = false;
-                break;
-            }
-        }
-
-        iterator++;
-        situationalErrorsIterator++;
-
     }
 
-    auto endTime = std::chrono::system_clock::now();
+    endTime = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsedSeconds = endTime - startTime;
     std::cout << std::endl << "Total execution time = " << elapsedSeconds.count() << std::endl;
 
@@ -443,13 +442,18 @@ void executeGBNProtocol(int clientSocket, sockaddr_in serverAddress) {
     std::chrono::system_clock::time_point startTime;
     std::chrono::system_clock::time_point endTime;
 
+    std::chrono::system_clock::time_point intervalStartTime;
+    std::chrono::system_clock::time_point intervalEndTime;
+
     int serverSize = sizeof(serverAddress);
+
+    startTime = std::chrono::system_clock::now();
 
     iterator = 0;
     int next = 0;
     while(true) {
 
-        if(iterator >= rangeOfSequenceNumbers - 1) {
+        if(iterator >= rangeOfSequenceNumbers) {
             break;
         }
 
@@ -468,19 +472,19 @@ void executeGBNProtocol(int clientSocket, sockaddr_in serverAddress) {
             printWindow();
 
             if(iterator == next) {
-                endTime = std::chrono::system_clock::now();
+                intervalEndTime = std::chrono::system_clock::now();
             } else {
-                startTime = std::chrono::system_clock::now();
+                intervalStartTime = std::chrono::system_clock::now();
             }
 
         }
 
-        std::chrono::duration<double> elapsedSeconds = endTime - startTime;
-        if(elapsedSeconds.count() >= timeoutInterval) {
+        std::chrono::duration<double> intervalElapsedSeconds = intervalEndTime - intervalStartTime;
+        if(intervalElapsedSeconds.count() >= timeoutInterval) {
 
             std::cout << "Timed out!" << std::endl;
 
-            startTime = std::chrono::system_clock::now();
+            intervalStartTime = std::chrono::system_clock::now();
 
             for(int i = iterator; i < next; i++) {
                 sendPacket(clientSocket, serverAddress, i);
@@ -489,5 +493,9 @@ void executeGBNProtocol(int clientSocket, sockaddr_in serverAddress) {
         }
 
     }
+
+    endTime = std::chrono::system_clock::now();
+    std::chrono::duration<double> elapsedSeconds = endTime - startTime;
+    std::cout << std::endl << "Total execution time = " << elapsedSeconds.count() << std::endl;
 
 }

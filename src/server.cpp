@@ -45,9 +45,7 @@ std::string filePathPrompt();
 
 bool quitPrompt();
 
-void executeSAWProtocol(int serverSocket, sockaddr_in clientAddress);
-
-void executeGBNProtocol(int serverSocket, sockaddr_in clientAddress);
+void executeSAW_GBNProtocol(int serverSocket, sockaddr_in clientAddress);
 
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
 //Functions (including main)       //*****//*****//*****//*****//*****//
@@ -95,11 +93,11 @@ int main() {
         switch (protocolType) {
             case 0:
                 std::cout << std::endl << "Executing Stop & Wait protocol..." << std::endl << std::endl;
-                executeSAWProtocol(serverSocket, clientAddress);
+                executeSAW_GBNProtocol(serverSocket, clientAddress);
                 break;
             case 1:
                 std::cout << std::endl << "Executing Go Back N protocol..." << std::endl << std::endl;
-                executeGBNProtocol(serverSocket, clientAddress);
+                executeSAW_GBNProtocol(serverSocket, clientAddress);
                 break;
             case 2:
                 std::cout << std::endl << "Executing Selective Repeat protocol..." << std::endl << std::endl;
@@ -250,54 +248,12 @@ void writePacketToFile(bool append, const std::string& message) {
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
 //Network protocols (algorithms)
 
-void executeSAWProtocol(int serverSocket, sockaddr_in clientAddress) {
+void executeSAW_GBNProtocol(int serverSocket, sockaddr_in clientAddress) {
 
     int clientSize = sizeof(clientAddress);
 
     iterator = 0;
     while(iterator < rangeOfSequenceNumbers) {
-
-        Packet myPacket{};
-
-        while(true) {
-
-            long ret = recvfrom(serverSocket, &myPacket, sizeof(myPacket), 0, (struct sockaddr*)&clientAddress, reinterpret_cast<socklen_t *>(&clientSize));
-
-            if(ret == 0) {
-                break;
-            } else if(ret < 0) {
-                perror("Error when receiving packet");
-                exit(-1);
-            }
-
-            if(myPacket.sequenceNumber == iterator && myPacket.valid) {
-                std::cout << "Received packet #" << myPacket.sequenceNumber << " successfully! [ ";
-                for(int i = 0; i < packetSize; i++) {
-                    std::cout << myPacket.contents[i];
-                }
-                std::cout << " ]" << std::endl;
-
-                iterator++;
-                //sendAck(serverSocket, clientAddress);
-                writePacketToFile(true, myPacket.contents);
-                break;
-            } else {
-                std::cout << "Received packet #" << myPacket.sequenceNumber << "... valid = " << myPacket.valid << std::endl;
-                //sendAck(serverSocket, clientAddress);
-                writePacketToFile(true, myPacket.contents);
-            }
-
-        }
-    }
-
-}
-
-void executeGBNProtocol(int serverSocket, sockaddr_in clientAddress) {
-
-    int clientSize = sizeof(clientAddress);
-
-    iterator = 0;
-    while(iterator < rangeOfSequenceNumbers - 1) {
 
         Packet myPacket{};
 
