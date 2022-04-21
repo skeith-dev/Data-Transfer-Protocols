@@ -22,7 +22,7 @@ std::string ipAddress; //IP address of the target server
 int portNum; //port number of the target server
 int protocolType; //0 for S&W, 1 for GBN, 2 for SR
 int packetSize; //specified size of packets to be sent
-int timeoutInterval; //user-specified (0+) or ping calculated (-1)
+int timeoutInterval; //user-specified (0+) or default (-1)
 int slidingWindowSize; //ex. [1, 2, 3, 4, 5, 6, 7, 8], size = 8
 int situationalErrors; //none (0), randomly generated (1), or user-specified (2)
 std::string filePath; //path to file to be sent
@@ -203,7 +203,12 @@ int timeoutIntervalPrompt() {
     std::string responseString;
     std::getline(std::cin, responseString);
 
-    return std::stoi(responseString);
+    int responseInt = std::stoi(responseString);
+    if(responseInt >= 0) {
+        return responseInt;
+    } else {
+        return 2;
+    }
 
 }
 
