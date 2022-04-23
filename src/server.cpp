@@ -10,6 +10,8 @@
 #include <arpa/inet.h>
 #include "packet.h"
 
+#define FINAL -1
+
 
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
 //Fields      //*****//*****//*****//*****//*****//*****//*****//*****//
@@ -20,7 +22,6 @@ int protocolType; //true for GBN, false for SR
 int packetSize; //specified size of packets to be sent
 int timeoutInterval; //user-specified (0+) or ping calculated (-1)
 int slidingWindowSize;  //ex. [1, 2, 3, 4, 5, 6, 7, 8], size = 8
-int rangeOfSequenceNumbers; //ex. (sliding window size = 3) [1, 2, 3] -> [2, 3, 4] -> [3, 4, 5], range = 5
 std::string filePath;
 bool quit; //true for yes, false for no
 
@@ -36,8 +37,6 @@ int portNumPrompt();
 int protocolTypePrompt();
 
 int packetSizePrompt();
-
-int rangeOfSequenceNumbersPrompt();
 
 int slidingWindowSizePrompt();
 
@@ -80,7 +79,6 @@ int main() {
             slidingWindowSize = slidingWindowSizePrompt();
         }
 
-        rangeOfSequenceNumbers = rangeOfSequenceNumbersPrompt();
         filePath = filePathPrompt();
 
         int socketBinding = bind(serverSocket, (const struct sockaddr *)&serverAddress, sizeof(serverAddress));
@@ -253,11 +251,15 @@ void executeSAW_GBNProtocol(int serverSocket, sockaddr_in clientAddress) {
     int clientSize = sizeof(clientAddress);
 
     iterator = 0;
-    while(iterator < rangeOfSequenceNumbers) {
+    while(true) {
 
         Packet myPacket{};
 
         if(recvfrom(serverSocket, &myPacket, sizeof(myPacket), MSG_DONTWAIT, (struct sockaddr*)&clientAddress, reinterpret_cast<socklen_t *>(&clientSize)) != -1) {
+
+            if(myPacket.sequenceNumber == FINAL) {
+                break;
+            }
 
             std::cout << "Received packet #" << myPacket.sequenceNumber << " successfully! [ ";
             for(int i = 0; i < packetSize; i++) {

@@ -12,6 +12,8 @@
 #include <arpa/inet.h>
 #include "packet.h"
 
+#define FINAL -1
+
 
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
 //Fields      //*****//*****//*****//*****//*****//*****//*****//*****//
@@ -317,9 +319,15 @@ void writeFileToPacket(int sequenceNumber) {
 
     //set global packet struct sequence number
     myPacket.sequenceNumber = sequenceNumber;
-    //copy the contents of the array to the global packet struct char vector
-    for(int i = 0; i < packetSize; i++) {
-        myPacket.contents[i] = contents[i];
+    if(myPacket.sequenceNumber != FINAL) {
+        //copy the contents of the array to the global packet struct char vector
+        for (int i = 0; i < packetSize; i++) {
+            myPacket.contents[i] = contents[i];
+        }
+    } else {
+        for (int i = 0; i < packetSize; i++) {
+            myPacket.contents[i] = '\0';
+        }
     }
 
     fileInputStream.close();
@@ -409,6 +417,7 @@ void executeSAWProtocol(int clientSocket, sockaddr_in serverAddress) {
     while(true) {
 
         if(iterator >= rangeOfSequenceNumbers - 1) {
+            sendPacket(clientSocket, serverAddress, FINAL);
             break;
         }
 
@@ -459,6 +468,7 @@ void executeGBNProtocol(int clientSocket, sockaddr_in serverAddress) {
     while(true) {
 
         if(iterator >= rangeOfSequenceNumbers) {
+            sendPacket(clientSocket, serverAddress, FINAL);
             break;
         }
 
