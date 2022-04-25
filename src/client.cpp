@@ -12,7 +12,7 @@
 #include <arpa/inet.h>
 #include "packet.h"
 
-#define FINAL -1
+#define FINAL_SEQUENCE_NUMBER -1
 
 
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
@@ -72,6 +72,8 @@ void sendPacket(int clientSocket, sockaddr_in serverAddress, int sequenceNumber)
 void generateRandomSituationalErrors();
 
 void generateUserSituationalErrors();
+
+bool checkIfDropPacket();
 
 void executeSAWProtocol(int clientSocket, sockaddr_in serverAddress);
 
@@ -319,7 +321,7 @@ void writeFileToPacket(int sequenceNumber) {
 
     //set global packet struct sequence number
     myPacket.sequenceNumber = sequenceNumber;
-    if(myPacket.sequenceNumber != FINAL) {
+    if(myPacket.sequenceNumber != FINAL_SEQUENCE_NUMBER) {
         //copy the contents of the array to the global packet struct char vector
         for (int i = 0; i < packetSize; i++) {
             myPacket.contents[i] = contents[i];
@@ -339,19 +341,28 @@ void sendPacket(int clientSocket, sockaddr_in serverAddress, int sequenceNumber)
     writeFileToPacket(sequenceNumber);
 
     myPacket.valid = true;
-    sendto(clientSocket, &myPacket, sizeof(myPacket), 0, (const struct sockaddr *) &serverAddress, sizeof(serverAddress));
 
-    std::cout << "Sent Packet #" << sequenceNumber << ": [ ";
-    for(int i = 0; i < packetSize; i++) {
-        std::cout << myPacket.contents[i];
+    if(!checkIfDropPacket()) {
+        sendto(clientSocket, &myPacket, sizeof(myPacket), 0, (const struct sockaddr *) &serverAddress,
+               sizeof(serverAddress));
+
+        std::cout << "Sent Packet #" << myPacket.sequenceNumber << ": [ ";
+        for(int i = 0; i < packetSize; i++) {
+            std::cout << myPacket.contents[i];
+        }
+        std::cout << " ]" << std::endl;
+    } else{
+        std::cout << "Dropped Packet #" << myPacket.sequenceNumber << std::endl;
     }
-    std::cout << " ]" << std::endl;
 
 }
 
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
 //Situational errors
 
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "cert-msc50-cpp"
+#pragma ide diagnostic ignored "cert-msc51-cpp"
 void generateRandomSituationalErrors() {
 
     srand(time(nullptr));
@@ -359,9 +370,14 @@ void generateRandomSituationalErrors() {
     //generate a random number between 1 and 3
     int numberOfErrors = (rand() % 3) + 1;
 
+    //insert a random number between 2 and 10 into the vector
     for(int i = 0; i < numberOfErrors; i++) {
-        situationalErrorsIterations.insert(situationalErrorsIterations.end(), rand() % 10);
+        situationalErrorsIterations.insert(situationalErrorsIterations.end(), (rand() % 10) + 2);
     }
+
+    //remove duplicate elements from the vector
+    sort(situationalErrorsIterations.begin(), situationalErrorsIterations.end());
+    situationalErrorsIterations.erase( unique(situationalErrorsIterations.begin(), situationalErrorsIterations.end() ), situationalErrorsIterations.end() );
 
     std::cout << "Every iteration of each of the following packets will be dropped: ";
     for(int situationalErrorIndex : situationalErrorsIterations) {
@@ -370,6 +386,7 @@ void generateRandomSituationalErrors() {
     std::cout << std::endl << std::endl;
 
 }
+#pragma clang diagnostic pop
 
 void generateUserSituationalErrors() {
 
@@ -397,6 +414,18 @@ void generateUserSituationalErrors() {
 
 }
 
+bool checkIfDropPacket() {
+
+    for(int situationalErrorsIteration : situationalErrorsIterations) {
+        if(situationalErrorsIterator > 1 && situationalErrorsIterator % situationalErrorsIteration == 0) {
+            std::cout << situationalErrorsIterator << " % " << situationalErrorsIteration << " = " << 0 << std::endl;
+            return true;
+        }
+    }
+    return false;
+
+}
+
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
 //Network protocols (algorithms)
 
@@ -405,8 +434,7 @@ void executeSAWProtocol(int clientSocket, sockaddr_in serverAddress) {
     std::chrono::system_clock::time_point startTime;
     std::chrono::system_clock::time_point endTime;
 
-    std::chrono::system_clock::time_point intervalStartTime;
-    std::chrono::system_clock::time_point intervalEndTime;
+    std::chrono::system_clock::time_point timerStart;
 
     int serverSize = sizeof(serverAddress);
 
@@ -414,10 +442,12 @@ void executeSAWProtocol(int clientSocket, sockaddr_in serverAddress) {
 
     bool outstanding = false;
     iterator = 0;
+    situationalErrorsIterator = 0;
     while(true) {
 
-        if(iterator >= rangeOfSequenceNumbers - 1) {
-            sendPacket(clientSocket, serverAddress, FINAL);
+        if(iterator >= rangeOfSequenceNumbers) {
+            sendPacket(clientSocket, serverAddress, FINAL_SEQUENCE_NUMBER);
+            situationalErrorsIterator++;
             break;
         }
 
@@ -425,22 +455,24 @@ void executeSAWProtocol(int clientSocket, sockaddr_in serverAddress) {
 
         if(!outstanding) {
             sendPacket(clientSocket, serverAddress, iterator);
+            situationalErrorsIterator++;
+            timerStart = std::chrono::system_clock::now();
             outstanding = true;
-            intervalStartTime = std::chrono::system_clock::now();
         }
 
         if(recvfrom(clientSocket, &myAck, sizeof(myAck), MSG_DONTWAIT, (struct sockaddr*)&serverAddress, reinterpret_cast<socklen_t *>(&serverSize)) != -1) {
             std::cout << "Received ack #" << myAck.sequenceNumber << std::endl;
             iterator = myAck.sequenceNumber + 1;
+            timerStart = std::chrono::system_clock::now();
             outstanding = false;
-            intervalEndTime = std::chrono::system_clock::now();
         }
 
-        std::chrono::duration<double> intervalElapsedSeconds = intervalEndTime - intervalStartTime;
-        if(intervalElapsedSeconds.count() >= timeoutInterval) {
-            std::cout << "Timed out!" << std::endl;
-            intervalStartTime = std::chrono::system_clock::now();
+        std::chrono::duration<double> timer = std::chrono::system_clock::now() - timerStart;
+        if(timer.count() >= timeoutInterval) {
+            std::cout << "Timed out! " << timer.count() << " > " << timeoutInterval << " (timeout interval)" << std::endl;
+            timerStart = std::chrono::system_clock::now();
             sendPacket(clientSocket, serverAddress, iterator);
+            situationalErrorsIterator++;
         }
 
     }
@@ -456,19 +488,20 @@ void executeGBNProtocol(int clientSocket, sockaddr_in serverAddress) {
     std::chrono::system_clock::time_point startTime;
     std::chrono::system_clock::time_point endTime;
 
-    std::chrono::system_clock::time_point intervalStartTime;
-    std::chrono::system_clock::time_point intervalEndTime;
+    std::chrono::system_clock::time_point timerStart;
 
     int serverSize = sizeof(serverAddress);
 
     startTime = std::chrono::system_clock::now();
 
     iterator = 0;
+    situationalErrorsIterator = 0;
     int next = 0;
     while(true) {
 
         if(iterator >= rangeOfSequenceNumbers) {
-            sendPacket(clientSocket, serverAddress, FINAL);
+            sendPacket(clientSocket, serverAddress, FINAL_SEQUENCE_NUMBER);
+            situationalErrorsIterator++;
             break;
         }
 
@@ -476,6 +509,8 @@ void executeGBNProtocol(int clientSocket, sockaddr_in serverAddress) {
 
         if(next < iterator + slidingWindowSize && next < rangeOfSequenceNumbers) {
             sendPacket(clientSocket, serverAddress, next);
+            situationalErrorsIterator++;
+            timerStart = std::chrono::system_clock::now();
             next++;
         }
 
@@ -486,24 +521,19 @@ void executeGBNProtocol(int clientSocket, sockaddr_in serverAddress) {
             iterator = myAck.sequenceNumber + 1;
             printWindow();
 
-            if(iterator == next) {
-                intervalEndTime = std::chrono::system_clock::now();
-            } else {
-                intervalStartTime = std::chrono::system_clock::now();
-            }
-
         }
 
-        std::chrono::duration<double> intervalElapsedSeconds = intervalEndTime - intervalStartTime;
-        if(intervalElapsedSeconds.count() >= timeoutInterval) {
+        std::chrono::duration<double> timer = std::chrono::system_clock::now() - timerStart;
+        if(std::abs(timer.count()) >= timeoutInterval) {
 
-            std::cout << "Timed out!" << std::endl;
-
-            intervalStartTime = std::chrono::system_clock::now();
+            std::cout << "Timed out! " << timer.count() << " >= " << timeoutInterval << " (timeout interval)" << std::endl;
 
             for(int i = iterator; i < next; i++) {
                 sendPacket(clientSocket, serverAddress, i);
+                situationalErrorsIterator++;
             }
+
+            timerStart = std::chrono::system_clock::now();
 
         }
 

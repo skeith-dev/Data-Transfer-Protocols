@@ -10,7 +10,7 @@
 #include <arpa/inet.h>
 #include "packet.h"
 
-#define FINAL -1
+#define FINAL_SEQUENCE_NUMBER -1
 
 
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
@@ -257,11 +257,11 @@ void executeSAW_GBNProtocol(int serverSocket, sockaddr_in clientAddress) {
 
         if(recvfrom(serverSocket, &myPacket, sizeof(myPacket), MSG_DONTWAIT, (struct sockaddr*)&clientAddress, reinterpret_cast<socklen_t *>(&clientSize)) != -1) {
 
-            if(myPacket.sequenceNumber == FINAL) {
+            if(myPacket.sequenceNumber == FINAL_SEQUENCE_NUMBER) {
                 break;
             }
 
-            std::cout << "Received packet #" << myPacket.sequenceNumber << " successfully! [ ";
+            std::cout << "Received packet #" << myPacket.sequenceNumber << "! [ ";
             for(int i = 0; i < packetSize; i++) {
                 std::cout << myPacket.contents[i];
             }
@@ -273,7 +273,6 @@ void executeSAW_GBNProtocol(int serverSocket, sockaddr_in clientAddress) {
                 iterator++;
             } else {
                 std::cout << "Received packet is corrupted!" << std::endl;
-                sendAck(serverSocket, clientAddress, iterator - 1);
             }
 
         }
