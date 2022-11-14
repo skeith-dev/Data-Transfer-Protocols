@@ -316,8 +316,18 @@ void writeFileToPacket(int sequenceNumber) {
 
     //create char array for file contents
     char contents[packetSize];
+    for(int i = 0; i < packetSize; i++) {
+        contents[i] = '\0';
+    }
+
     //read file contents into array of amount packetSize
-    fileInputStream.read(contents, packetSize);
+    if(sequenceNumber + 1 < fileSizeRangeOfSequenceNumbers) {
+        fileInputStream.read(contents, packetSize);
+    } else {
+        int remainingBytes = fileSize - (sequenceNumber * packetSize);
+        std::cout << "REMAINING BYTES: " << remainingBytes << std::endl;
+        fileInputStream.read(contents, remainingBytes);
+    }
 
     //set global packet struct sequence number
     myPacket.sequenceNumber = sequenceNumber;
