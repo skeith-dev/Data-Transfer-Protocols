@@ -7,8 +7,15 @@ include_directories(.)
 
 add_executable(Data_Transfer_Protocols_client
         src/client.cpp
-        src/packet.h)
+        src/prompts.h
+        src/packet_file_io.h)
 
 add_executable(Data_Transfer_Protocols_server
         src/server.cpp
-        src/packet.h)
+        src/prompts.h
+        src/packet_file_io.h)
+
+add_executable(Data_Transfer_Protocols_test
+        src/test.cpp
+        src/prompts.h
+        src/packet_file_io.h)

@@ -8,7 +8,7 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-#include "packet.h"
+#include "prompts.h"
 
 #define FINAL_SEQUENCE_NUMBER -1
 
@@ -27,24 +27,8 @@ bool quit; //true for yes, false for no
 
 int iterator; //iterator for network protocols
 
-//*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
-//Function declarations            //*****//*****//*****//*****//*****//
 
-std::string ipAddressPrompt();
-
-int portNumPrompt();
-
-int protocolTypePrompt();
-
-int packetSizePrompt();
-
-int slidingWindowSizePrompt();
-
-std::string filePathPrompt();
-
-bool quitPrompt();
-
-void executeSAW_GBNProtocol(int serverSocket, sockaddr_in clientAddress);
+void executeSAW_GBNProtocol(int serverSocket, sockaddr_in clientAddress, int packetSize);
 
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
 //Functions (including main)       //*****//*****//*****//*****//*****//
@@ -79,7 +63,7 @@ int main() {
             slidingWindowSize = slidingWindowSizePrompt();
         }
 
-        filePath = filePathPrompt();
+        filePath = outputFilePathPrompt();
 
         int socketBinding = bind(serverSocket, (const struct sockaddr *)&serverAddress, sizeof(serverAddress));
         if(socketBinding == -1) {
@@ -91,11 +75,11 @@ int main() {
         switch (protocolType) {
             case 0:
                 std::cout << std::endl << "Executing Stop & Wait protocol..." << std::endl << std::endl;
-                executeSAW_GBNProtocol(serverSocket, clientAddress);
+                executeSAW_GBNProtocol(serverSocket, clientAddress, packetSize);
                 break;
             case 1:
                 std::cout << std::endl << "Executing Go Back N protocol..." << std::endl << std::endl;
-                executeSAW_GBNProtocol(serverSocket, clientAddress);
+                executeSAW_GBNProtocol(serverSocket, clientAddress, packetSize);
                 break;
             case 2:
                 std::cout << std::endl << "Executing Selective Repeat protocol..." << std::endl << std::endl;
@@ -115,97 +99,6 @@ int main() {
 }
 
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
-//Prompts
-
-std::string ipAddressPrompt() {
-
-    std::cout << "What is the IP address of the target server:" << std::endl;
-
-    std::string responseString;
-    std::getline(std::cin, responseString);
-
-    return responseString;
-
-}
-
-int portNumPrompt() {
-
-    std::cout << "What is the port number of the target server:" << std::endl;
-
-    std::string responseString;
-    std::getline(std::cin, responseString);
-
-    return std::stoi(responseString);
-
-}
-
-int protocolTypePrompt() {
-
-    std::cout << "Type of protocol, S&W (0), GBN (1) or SR (2):" << std::endl;
-
-    std::string responseString;
-    std::getline(std::cin, responseString);
-
-    return std::stoi(responseString);
-
-}
-
-int packetSizePrompt() {
-
-    std::cout << "Size of packets:" << std::endl;
-
-    std::string responseString;
-    std::getline(std::cin, responseString);
-
-    return std::stoi(responseString);
-
-}
-
-int slidingWindowSizePrompt() {
-
-    std::cout << "Size of sliding window:" << std::endl;
-
-    std::string responseString;
-    std::getline(std::cin, responseString);
-
-    return std::stoi(responseString);
-
-}
-
-int rangeOfSequenceNumbersPrompt() {
-
-    std::cout << "Range of sequence numbers:" << std::endl;
-
-    std::string responseString;
-    std::getline(std::cin, responseString);
-
-    return std::stoi(responseString);
-
-}
-
-std::string filePathPrompt() {
-
-    std::cout << "What is the filepath of the file you wish to write to:" << std::endl;
-
-    std::string responseString;
-    std::getline(std::cin, responseString);
-
-    return responseString;
-
-}
-
-bool quitPrompt() {
-
-    std::cout << std::endl << "Would you like to exit (1), or perform another file transfer (0):" << std::endl;
-
-    std::string responseString;
-    std::getline(std::cin, responseString);
-
-    return std::stoi(responseString) == 1;
-
-}
-
-//*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
 //UDP NETWORKING FUNCTIONS, FILE READING/WRITING FUNCTIONS
 
 void printWindow() {
@@ -220,12 +113,12 @@ void printWindow() {
 
 void sendAck(int serverSocket, sockaddr_in clientAddress, int sequenceNumber) {
 
-    Packet myAck{};
+    /*Packet myAck{};
     myAck.sequenceNumber = sequenceNumber;
     myAck.valid = true;
 
     sendto(serverSocket, &myAck, sizeof(myAck), 0, (const struct sockaddr *) &clientAddress, sizeof(clientAddress));
-    std::cout << "Sent Ack #" << myAck.sequenceNumber << std::endl;
+    std::cout << "Sent Ack #" << myAck.sequenceNumber << std::endl;*/
 
 }
 
@@ -246,34 +139,36 @@ void writePacketToFile(bool append, const std::string& message) {
 //*****//*****//*****//*****//*****//*****//*****//*****//*****//*****//
 //Network protocols (algorithms)
 
-void executeSAW_GBNProtocol(int serverSocket, sockaddr_in clientAddress) {
+void executeSAW_GBNProtocol(int serverSocket, sockaddr_in clientAddress, int packetSize) {
 
     int clientSize = sizeof(clientAddress);
 
     iterator = 0;
     while(true) {
 
-        Packet myPacket{};
+        char message[ sizeof(int) + sizeof(bool) + packetSize ];
 
-        if(recvfrom(serverSocket, &myPacket, sizeof(myPacket), MSG_DONTWAIT, (struct sockaddr*)&clientAddress, reinterpret_cast<socklen_t *>(&clientSize)) != -1) {
+        if(recvfrom(serverSocket, message, sizeof(message), MSG_DONTWAIT, (struct sockaddr*)&clientAddress, reinterpret_cast<socklen_t *>(&clientSize)) != -1) {
 
-            if(myPacket.sequenceNumber == FINAL_SEQUENCE_NUMBER) {
+            int sequenceNumber;
+            std::memcpy(&sequenceNumber, message, sizeof(int));
+            if(sequenceNumber == FINAL_SEQUENCE_NUMBER) {
                 break;
             }
 
-            std::cout << "Received packet #" << myPacket.sequenceNumber << "! [ ";
-            for(int i = 0; i < packetSize; i++) {
-                std::cout << myPacket.contents[i];
+            std::cout << "Received packet #" << sequenceNumber << "! [ ";
+            for(int i = 0; i < sizeof(message); i++) {
+                std::cout << message[i];
             }
             std::cout << " ]" << std::endl;
 
-            if(myPacket.valid && myPacket.sequenceNumber == iterator) {
+            /*if(myPacket.valid && myPacket.sequenceNumber == iterator) {
                 sendAck(serverSocket, clientAddress, iterator);
                 writePacketToFile(true, myPacket.contents);
                 iterator++;
             } else {
                 std::cout << "Received packet is corrupted!" << std::endl;
-            }
+            }*/
 
         }
 
