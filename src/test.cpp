@@ -3,11 +3,9 @@
 //
 
 #include <string>
-#include <netinet/in.h>
-#include <cstdio>
-#include <cstdlib>
 #include <arpa/inet.h>
-#include "packet_file_io.h"
+#include "file_io.h"
+#include "socket_io.h"
 
 
 int main() {
@@ -23,9 +21,13 @@ int main() {
     serverAddress.sin_addr.s_addr = inet_addr(std::string("127.0.0.1").c_str());
     serverAddress.sin_port = htons(5000);
 
-    sendPacket(clientSocket, serverAddress, std::string("/Users/spencerkeith/Desktop/School/Spring 2022/CS 462/Data-Transfer-Protocols/Read-Write/Crash Team Racing: Nitro Fueled Dev Time Rankings.txt"), 0, 10, 1511, 152);
-    sendPacket(clientSocket, serverAddress, std::string("/Users/spencerkeith/Desktop/School/Spring 2022/CS 462/Data-Transfer-Protocols/Read-Write/Crash Team Racing: Nitro Fueled Dev Time Rankings.txt"), 1, 10, 1511, 152);
-    sendPacket(clientSocket, serverAddress, std::string("/Users/spencerkeith/Desktop/School/Spring 2022/CS 462/Data-Transfer-Protocols/Read-Write/Crash Team Racing: Nitro Fueled Dev Time Rankings.txt"), 2, 10, 1511, 152);
+    openFile(std::string("/Users/spencerkeith/Desktop/School/Spring 2022/CS 462/Data-Transfer-Protocols/Read-Write/Crash Team Racing: Nitro Fueled Dev Time Rankings.txt"));
+
+    char packet[10];
+    writeFileToPacket(packet, std::string("/Users/spencerkeith/Desktop/School/Spring 2022/CS 462/Data-Transfer-Protocols/Read-Write/Crash Team Racing: Nitro Fueled Dev Time Rankings.txt"), 1511, 0, 10, 152);
+    printPacket(packet, 10);
+
+    sendPacket(clientSocket, serverAddress, packet, 0, 10);
 
     return 0;
 
